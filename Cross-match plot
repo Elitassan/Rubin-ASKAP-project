@@ -1,0 +1,231 @@
+import numpy as np
+import matplotlib.pyplot as plt
+import pandas as pd
+from astropy.io import fits
+
+
+# ============================================================
+threshold = 0.9
+# ============================================================
+
+
+# ============================================================
+# FILE
+# ============================================================
+
+nway_fits = r"C:\Users\elita\Rubin-ASKAP project\Data\ASKAP NWAY matches\NWAY_ZTF_vs_EMU_2026_COSMOS_radius_6.fits"
+
+
+# ============================================================
+# READ NWAY FILE
+# ============================================================
+
+with fits.open(nway_fits, memmap=False) as hdul:
+    data = hdul[1].data.copy()
+
+print("=" * 70)
+print("NWAY CATALOGUE")
+print("=" * 70)
+
+print(f"Total NWAY rows: {len(data)}")
+
+
+# ============================================================
+# CONVERT COLUMNS
+# ============================================================
+
+ztf_ra = np.array(data["FINK_RA"], dtype=float)
+ztf_dec = np.array(data["FINK_DEC"], dtype=float)
+
+askap_ra = np.array(data["ASKAP_RA"], dtype=float)
+askap_dec = np.array(data["ASKAP_DEC"], dtype=float)
+
+p_any = np.array(data["p_any"], dtype=float)
+p_i = np.array(data["p_i"], dtype=float)
+
+ztf_id = np.array(data["FINK_ID"])
+tnsclass = np.array(data["FINK_tnsclass"]).astype(str)
+cdsxmatch = np.array(data["FINK_cdsxmatch"]).astype(str)
+
+
+# ============================================================
+# SELECT MATCHES
+# ============================================================
+
+mask = (
+    (p_i >= threshold) &
+    (askap_ra > -90) &
+    (askap_dec > -90) &
+    np.isfinite(ztf_ra) &
+    np.isfinite(ztf_dec) &
+    np.isfinite(askap_ra) &
+    np.isfinite(askap_dec)
+)
+
+
+# ============================================================
+# CREATE RESULTS TABLE
+# ============================================================
+
+results = pd.DataFrame({
+    "ZTF_ID": ztf_id[mask],
+    "ZTF_RA": ztf_ra[mask],
+    "ZTF_DEC": ztf_dec[mask],
+    "ASKAP_RA": askap_ra[mask],
+    "ASKAP_DEC": askap_dec[mask],
+    "p_any": p_any[mask],
+    "p_i": p_i[mask],
+    "tnsclass": tnsclass[mask],
+    "cdsxmatch": cdsxmatch[mask]
+})
+
+
+# ============================================================
+# PRINT SUMMARY
+# ============================================================
+
+print(f"p_i threshold: {threshold}")
+print(f"Number of matches: {len(results)}")
+
+print("\n" + "=" * 70)
+print("ZTF CLASSES")
+print("=" * 70)
+
+class_counts = results["cdsxmatch"].value_counts()
+
+for cls, count in class_counts.items():
+    print(f"{cls}: {count}")
+
+
+# ============================================================
+# DISPLAY TABLE
+# ============================================================
+
+print("\n" + "=" * 70)
+print("MATCHES")
+print("=" * 70)
+
+display(results)
+
+
+# ============================================================
+# PLOT
+# ============================================================
+
+plt.figure(figsize=(10, 7))
+
+plt.scatter(
+    results["ZTF_RA"],
+    results["ZTF_DEC"],
+    s=50,
+    label="ZTF"
+)
+
+plt.scatter(
+    results["ASKAP_RA"],
+    results["ASKAP_DEC"],
+    s=50,
+    marker="x",
+    label="ASKAP"
+)
+
+# Connect ZTF and ASKAP positions
+for _, row in results.iterrows():
+
+    plt.plot(
+        [row["ZTF_RA"], row["ASKAP_RA"]],
+        [row["ZTF_DEC"], row["ASKAP_DEC"]],
+        linewidth=0.6,
+        alpha=0.5
+    )
+
+plt.xlabel("RA [deg]")
+plt.ylabel("DEC [deg]")
+plt.title(f"NWAY matches with p_i ≥ {threshold}")
+
+# Astronomical convention
+plt.gca().invert_xaxis()
+
+plt.legend()
+plt.grid(alpha=0.3)
+plt.tight_layout()
+plt.show()
+
+# ============================================================
+# PLOT MATCHES BY ZTF CLASS
+# ============================================================
+
+plt.figure(figsize=(10, 7))
+
+# ------------------------------------------------------------
+# Plot ASKAP positions first
+# ------------------------------------------------------------
+
+plt.scatter(
+    results["ASKAP_RA"],
+    results["ASKAP_DEC"],
+    s=40,
+    marker="x",
+    color="black",
+    zorder=1
+)
+
+
+# ------------------------------------------------------------
+# Connect ZTF and ASKAP positions
+# ------------------------------------------------------------
+
+for _, row in results.iterrows():
+
+    plt.plot(
+        [row["ZTF_RA"], row["ASKAP_RA"]],
+        [row["ZTF_DEC"], row["ASKAP_DEC"]],
+        linewidth=0.6,
+        alpha=0.4,
+        color="gray",
+        zorder=0
+    )
+
+
+# ------------------------------------------------------------
+# Plot ZTF sources by class
+# ------------------------------------------------------------
+
+classes = results["cdsxmatch"].unique()
+
+for cls in classes:
+
+    class_data = results[results["cdsxmatch"] == cls]
+
+    plt.scatter(
+        class_data["ZTF_RA"],
+        class_data["ZTF_DEC"],
+        s=60,
+        label=f"{cls} ({len(class_data)})",
+        zorder=2
+    )
+
+
+# ------------------------------------------------------------
+# Labels
+# ------------------------------------------------------------
+
+plt.xlabel("RA [deg]")
+plt.ylabel("DEC [deg]")
+
+plt.title(
+    f"ZTF and EMU match in COSMOS region with probability ≥ {threshold}"
+)
+
+# Astronomical convention
+plt.gca().invert_xaxis()
+
+plt.legend(
+    title="ZTF class",
+    bbox_to_anchor=(1.02, 1),
+    loc="upper left"
+)
+
+plt.grid(alpha=0.3)
+plt.tight_layout()
+plt.show()
