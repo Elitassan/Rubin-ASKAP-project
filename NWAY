@@ -1,0 +1,202 @@
+import subprocess
+import sys
+from pathlib import Path
+
+from astropy.table import Table
+import numpy as np
+
+
+# ============================================================
+# INPUT FILES
+# ============================================================
+
+ztf = Path(
+    r"C:\Users\elita\Rubin-ASKAP project\Data\ZTF FITS for nway\ZTF_COSMOS_last_alert_per_object.fits"
+)
+
+askap_2025 = Path(
+    r"C:\Users\elita\Rubin-ASKAP project\Data\ASKAP FITS for nway\EMU_2025-06-28T0355_COSMOS_components.fits"
+)
+
+
+# ============================================================
+# FINAL OUTPUT
+# ============================================================
+
+output_fits = Path(
+    r"C:\Users\elita\Rubin-ASKAP project\Data\ASKAP NWAY matches\NWAY_ZTF_vs_EMU_2025_COSMOS_radius_6.fits"
+)
+
+
+# ============================================================
+# CREATE ASKAP POSITIONAL ERROR
+# ============================================================
+
+askap_table = Table.read(askap_2025)
+
+# Convert error columns to numeric values
+ra_err = np.array(askap_table["ra_err"], dtype=float)
+dec_err = np.array(askap_table["dec_err"], dtype=float)
+
+# Positional error for each ASKAP source
+poserr = np.sqrt(
+    ra_err**2 + dec_err**2
+)
+
+# ============================================================
+# REPLACE ZERO POSITIONAL ERRORS
+# ============================================================
+
+zero_mask = poserr == 0
+
+print("Number of ASKAP sources with poserr = 0:",
+      np.sum(zero_mask))
+
+# Replace zero errors with 0.65 arcsec
+poserr[zero_mask] = 0.65
+
+print("Number of ASKAP sources replaced with 0.65 arcsec:",
+      np.sum(zero_mask))
+
+# Add positional error column
+askap_table["poserr"] = poserr
+
+
+# ============================================================
+# CHECK POSITIONAL ERRORS
+# ============================================================
+
+print("\nASKAP positional error:")
+print("Minimum:", np.min(poserr), "arcsec")
+print("Maximum:", np.max(poserr), "arcsec")
+print("Number still equal to 0:",
+      np.sum(poserr == 0))
+
+
+# ============================================================
+# TEMPORARY ASKAP FILE WITH poserr COLUMN
+# ============================================================
+
+askap_with_poserr = askap_2025.with_name(
+    askap_2025.stem + "_with_poserr.fits"
+)
+
+askap_table.write(
+    askap_with_poserr,
+    overwrite=True
+)
+
+
+# ============================================================
+# NWAY SETTINGS
+# ============================================================
+
+radius = "6"
+
+# Fixed ZTF positional error
+ztf_poserr = "0.1"
+
+# Use the poserr column from ASKAP
+askap_2025_poserr = ":poserr"
+
+
+# ============================================================
+# NWAY SCRIPT
+# ============================================================
+
+nway_script = (
+    r"C:\Users\elita\anaconda3\envs\nway\Scripts\nway.py"
+)
+
+
+# ============================================================
+# NWAY COMMAND
+# ============================================================
+
+command = [
+    sys.executable,
+    nway_script,
+
+    "--radius", radius,
+
+    str(ztf),
+    ztf_poserr,
+
+    str(askap_with_poserr),
+    askap_2025_poserr,
+
+    "--out", str(output_fits)
+]
+
+
+# ============================================================
+# PRINT SETTINGS
+# ============================================================
+
+print("\nRunning NWAY...\n")
+
+print("ZTF:")
+print(ztf)
+
+print("\nASKAP 2025:")
+print(askap_with_poserr)
+
+print("\nSearch radius:",
+      radius, "arcsec")
+
+print("ZTF positional error:",
+      ztf_poserr, "arcsec")
+
+print("ASKAP positional error:")
+print("Using calculated :poserr column")
+print("Zero errors replaced with 0.65 arcsec")
+
+print("\nOutput:")
+print(output_fits)
+
+print("\n" + "=" * 60)
+
+
+# ============================================================
+# RUN NWAY
+# ============================================================
+
+result = subprocess.run(
+    command,
+    capture_output=True,
+    text=True
+)
+
+
+# ============================================================
+# PRINT NWAY OUTPUT
+# ============================================================
+
+print(result.stdout)
+
+if result.stderr:
+    print("\nNWAY messages/errors:")
+    print(result.stderr)
+
+
+# ============================================================
+# CHECK RESULT
+# ============================================================
+
+if result.returncode == 0:
+
+    print("\n" + "=" * 60)
+    print("NWAY COMPLETED SUCCESSFULLY")
+    print("=" * 60)
+
+    print("\nOutput file:")
+    print(output_fits)
+
+else:
+
+    print("\n" + "=" * 60)
+    print("NWAY FAILED")
+    print("=" * 60)
+
+    print("\nReturn code:",
+          result.returncode)
